@@ -1,0 +1,185 @@
+.box {
+    position: relative;
+    border-radius: 3px;
+    background: #ffffff;
+    border-top: 3px solid #d2d6de;
+    width: 900px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    margin: auto;
+
+}
+#box2{
+
+    position: relative;
+    border-radius: 3px;
+    background: #ffffff;
+    border-top: 3px solid #d2d6de;
+    width: 900px;
+    /*box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);*/
+    padding: 20px;
+    margin: auto;
+
+}
+
+
+#btn1 {
+    margin-top: 20px;
+
+}
+
+#backbtn {
+    float: right;
+    margin-top: 40px;
+    margin-bottom:20px;
+}
+#backbtn2 {
+
+    float: right;
+
+    margin-top: 60px;
+}
+
+.table_h4 {
+    color: #333333;
+    font-weight: bold;
+    margin-bottom: 5px;
+    margin-left: 5px;
+    font-size: 1.17em;
+    -webkit-margin-before: 2em;
+    -webkit-margin-after: 1em;
+    -webkit-margin-start: 0px;
+    -webkit-margin-end: 0px;
+}
+
+.table_sub {
+    margin-left: 5px;
+}
+
+.box-title {
+    margin-bottom: 20px;
+}
+
+#admin_go {
+    float: right;
+    /*width:200px;*/
+    /*height:50px;*/
+    /*margin:auto;*/
+    margin-top: 20px;
+    margin-bottom:20px;
+
+}
+.box-body{
+
+}
+
+#admin_table1 {
+    text-align: center;
+   }
+#admin_table2 {
+    text-align: center;
+}
+#info_table1,#info_table2,#info_table3{
+    text-align: center;
+    width:860px;
+    float:left;
+
+}
+.sub_td td{
+    font-weight: bold;
+}
+#chart9 {
+    float: left;
+    width: 500px;
+    height: 500px;
+    border: solid #eee 1px;
+
+    margin: auto;
+    margin-bottom:20px;
+}
+#chart19 {
+    float: left;
+    width: 860px;
+    height: 300px;
+    border: solid #eee 2px;
+
+    margin: auto;
+    /*margin-bottom:40px;*/
+}
+#chart10 {
+    float: right;
+    width: 360px;
+    height: 500px;
+    border-top: solid #eee 1px;
+    border-bottom: solid #eee 1px;
+
+    border-right: solid #eee 1px;
+
+}
+#form1{
+    float: left;
+    width:430px;
+    height:350px;
+    margin:auto;
+}
+.form-signin-heading{
+    margin-bottom:20px;
+}
+.form-signin {
+
+    max-width: 370px;
+    height:360px;
+    padding:20px;
+    padding-left: 20px;
+    padding-right: 20px;
+    padding-bottom: 20px;
+    margin: 0 auto;
+    /*background-color: #eee;*/
+    border: 1px solid #e6e6e6;
+    /*float:left;*/
+}
+#chart20 {
+    float: left;
+    width: 430px;
+    height: 360px;
+
+    /*margin: 0 auto;*/
+}
+#chart21{
+    padding-left:5px;
+    border: 1px solid #e6e6e6;
+    margin:auto;
+    width:370px;
+    height:360px;
+}
+#chart11 {
+    float: left;
+    border: solid #eee 1px;
+    width: 860px;
+    height: 450px;
+}
+
+#myChart2 {
+    margin: 0 auto;
+}
+
+#myChart3 {
+
+    margin-left: 10px;
+    /*padding-left:30px;*/
+}
+
+#myChart4 {
+    margin: 10px;
+}
+#myChart11{
+    margin-left:5px;
+}
+
+.chart_sub {
+    margin-left: 10px;
+    margin-top: 10px;
+
+
+
+}
