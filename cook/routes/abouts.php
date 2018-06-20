@@ -199,9 +199,10 @@ $app->post('/api/abouts[/{num}]' , function(Request $request , Response $respons
     foreach ($uploadedFiles['upfile'] as $upfile) { ///private/var/tmp/phpkAnv90
         //return $response->getBody()->write(var_dump($upfile));
 
-        //if (empty($upfile)) {
-            //throw new Exception('Expected a newfile');
-        //}
+        if (is_string($upfile)) {
+            $resultData = array('result' => '400', 'message' => '', 'data' => '{"error" : {"text" : "파일명을 upfile[] 로 업로드해주세요."}}');
+            throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
 
         if ($upfile->getError() === UPLOAD_ERR_OK) { //https://securr/features.file-upload.errors.php
             //$size = getimagesize($upfile); //파일경로까지 존재해야함...이건 안됨
@@ -236,8 +237,8 @@ $app->post('/api/abouts[/{num}]' , function(Request $request , Response $respons
     $sql = "INSERT INTO cook_about (id, name, nick, subject, content, regist_day, is_html, hit)";
     $sql .= " VALUES(:id, :name, :nick, :subject, :content, :regist_day, :is_html, 0)";
 
-    $sql_file = "INSERT INTO cook_file (b_type, b_num, org_filename, filename, mime_type, file_size, regist_day)";
-    $sql_file .= " VALUES(:b_type, :b_num, :org_filename, :filename, :mime_type, :file_size, :regist_day) ";
+    $sql_file = "INSERT INTO cook_file (b_type, id, b_num, org_filename, filename, mime_type, file_size, regist_day)";
+    $sql_file .= " VALUES(:b_type, :id, :b_num, :org_filename, :filename, :mime_type, :file_size, :regist_day) ";
     //sql_file .= " ON DUPLICATE KEY UPDATE b_type=:b_type, b_num = :b_num, num=:num";
 
     try{
@@ -264,13 +265,18 @@ $app->post('/api/abouts[/{num}]' , function(Request $request , Response $respons
         $file_array = array();
         foreach($abouts['files'] as $file_infos) {
             //return $response->write(print_r($file_infos));
-            $stmt_file->bindParam(':b_type', $b_type,  PDO::PARAM_STR);
-            $stmt_file->bindParam(':b_num', $abouts['num'], PDO::PARAM_STR);
+            $file_infos['b_type'] = $b_type;
+            $file_infos['b_num'] = $abouts['num'];
+            $file_infos['id'] = $abouts['id'];
+            $file_infos['regist_day'] = date("Y-m-d(H:i)");
+            $stmt_file->bindParam(':b_type', $file_infos["b_type"],  PDO::PARAM_STR);
+            $stmt_file->bindParam(':b_num', $file_infos["b_num"], PDO::PARAM_INT);
+            $stmt_file->bindParam(':id', $file_infos["id"], PDO::PARAM_STR);
             $stmt_file->bindParam(':org_filename', $file_infos["org_filename"], PDO::PARAM_STR);
             $stmt_file->bindParam(':filename', $file_infos["filename"], PDO::PARAM_STR);
             $stmt_file->bindParam(':mime_type', $file_infos["mime_type"], PDO::PARAM_STR);
             $stmt_file->bindParam(':file_size', $file_infos["file_size"],PDO::PARAM_INT);
-            $stmt_file->bindParam(':regist_day',date("Y-m-d(H:i)"), PDO::PARAM_STR);
+            $stmt_file->bindParam(':regist_day',$file_infos["regist_day"], PDO::PARAM_STR);
             $stmt_file->execute();
             $file_infos['num'] = $db->lastInsertId(); //commit 전 호출해야함;
             $file_infos['file_url'] = '/api/abouts/'.$abouts['num'].'/files/'.$file_infos['num'];
@@ -291,7 +297,8 @@ $app->post('/api/abouts[/{num}]' , function(Request $request , Response $respons
             //->getBody()
             ->write(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
 
-
+    }catch(CookException $e){
+        throw $e;
     }catch(Exception $e){
         $db->rollBack();
         //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
@@ -311,6 +318,7 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
     $db = $db->connect();
 
     $num = $args['num'];
+    $data = $request->getParsedBody(); //application/x-www-form-urlencoded, multipart/form-data
 
     //인증검사
     $_SESSION['userid'] = "sedan";
@@ -342,6 +350,8 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
             throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         }
 
+    }catch(CookException $e){
+        throw $e;
     }catch(Exception $e){
         //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
         //나중에 로그로 남기며 정확한 exception은 client에 보내지 않기로 변경해야함.
@@ -349,9 +359,41 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
         throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
     }
 
+    //수정권한과 리소스 존재여부 검사, 역시 middleware로...
+    $sql = "SELECT id FROM cook_file WHERE b_num=:b_num AND b_type=:b_type AND num in (".implode(',', $data['file_num']). ")";
+
+    try{
+        $stmt = $db->prepare($sql);
+        $stmt->bindParam(':b_num',$num, PDO::PARAM_INT);
+        $stmt->bindValue(':b_type','about', PDO::PARAM_STR);
+        //$stmt->bindParam(':id',$_SESSION['userid'], PDO::PARAM_STR);
+        $stmt->execute();
+
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        //echo "rowcount:".$stmt->rowCount();
+        //return $response;
+
+        if ($stmt->rowCount() == 0) {
+            $resultData = array('result' => '404', 'message' => '', 'data' => '{"error" : {"text" : "존재하지 않는 파일입니다."}}');
+            throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
+        //배열처리없이 칼럼 하나만 가져오는 건 없낭?
+        if ($result['id'] != $_SESSION['userid']) {
+            $resultData = array('result' => '403', 'message' => '', 'data' => '{"error" : {"text" : "작성자만 수정할 수 있습니다."}}');
+            throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+        }
+
+    }catch(CookException $e){
+        throw $e;
+    }catch(Exception $e){
+        //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
+        //나중에 로그로 남기며 정확한 exception은 client에 보내지 않기로 변경해야함.
+        $resultData = array('result' => '500', 'message' => '', 'data' => '{"error" : {"text" : '.$e->getMessage().'}}');
+        throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+    }
     //필수필드조사
     //업로드가 안되는 경우에는 폼데이타도 넘어오지 않아서 여기서부터 오류가 발생함.
-    $data = $request->getParsedBody(); //application/x-www-form-urlencoded, multipart/form-data
     $key_arr = array('id', 'name', 'nick', 'content', 'subject');
     foreach ($key_arr as $key_name) {
         if (!array_key_exists($key_name, $data) || empty($data[$key_name])) {
@@ -362,6 +404,7 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
 
 
     $abouts = [];
+    $abouts['id'] = filter_var($data['id'], FILTER_SANITIZE_STRING); //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
     $abouts['num'] = filter_var($num, FILTER_SANITIZE_NUMBER_INT); //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
     $abouts['is_html'] = filter_var($data['html_ok'], FILTER_SANITIZE_STRING);
     $abouts['subject'] = filter_var($data['subject'], FILTER_SANITIZE_FULL_SPECIAL_CHARS); //htmlspecialchars
@@ -400,9 +443,10 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
     foreach ($uploadedFiles['upfile'] as $upfile) { ///private/var/tmp/phpkAnv90
         //return $response->getBody()->write(var_dump($upfile));
 
-        //if (empty($upfile)) {
-        //throw new Exception('Expected a newfile');
-        //}
+        if (is_string($upfile)) {
+            $resultData = array('result' => '400', 'message' => '', 'data' => '{"error" : {"text" : "파일명을 upfile[] 로 업로드해주세요."}}');
+            throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        }
 
         if ($upfile->getError() === UPLOAD_ERR_OK) { //https://securr/features.file-upload.errors.php
             //$size = getimagesize($upfile); //파일경로까지 존재해야함...이건 안됨
@@ -427,6 +471,7 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
             , "file_size" => $file_size
             , "b_type"=> "about"
             , "b_num" => $num
+            , "id" => $abouts['id']
             , "regist_day"=>date("Y-m-d(H:i)")
             , "is_del"=>"N");
             array_push($abouts['files'], $file_infos);
@@ -443,8 +488,8 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
     $sql = "UPDATE cook_about SET is_html = :is_html, subject = :subject, content = :content";
     $sql .= " WHERE num = :num";
 
-    $sql_file = "INSERT INTO cook_file (num, b_type, b_num, org_filename, filename, mime_type, file_size, regist_day, is_del)";
-    $sql_file .= " VALUES(:num, :b_type, :b_num, :org_filename, :filename, :mime_type, :file_size, :regist_day, :is_del) ";
+    $sql_file = "INSERT INTO cook_file (num, b_type, b_num, id, org_filename, filename, mime_type, file_size, regist_day, is_del)";
+    $sql_file .= " VALUES(:num, :b_type, :b_num, :id, :org_filename, :filename, :mime_type, :file_size, :regist_day, :is_del) ";
     $sql_file .= " ON DUPLICATE KEY UPDATE b_type=:b_type, b_num = :b_num, num=:num";
 
 
@@ -476,6 +521,7 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
             $stmt_file->bindParam(':num', $file_infos['num'],  PDO::PARAM_STR);
             $stmt_file->bindParam(':b_type', $file_infos['b_type'],  PDO::PARAM_STR);
             $stmt_file->bindParam(':b_num', $file_infos['b_num'], PDO::PARAM_STR);
+            $stmt_file->bindParam(':id', $file_infos['id'], PDO::PARAM_STR);
             $stmt_file->bindParam(':org_filename', $file_infos["org_filename"], PDO::PARAM_STR);
             $stmt_file->bindParam(':filename', $file_infos["filename"], PDO::PARAM_STR);
             $stmt_file->bindParam(':mime_type', $file_infos["mime_type"], PDO::PARAM_STR);
@@ -501,6 +547,8 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
             ->write(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
 
 
+    }catch(CookException $e){
+        throw $e;
     }catch(Exception $e){
         $db->rollBack();
         //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
@@ -553,6 +601,8 @@ $app->delete('/api/abouts/{num}' , function(Request $request , Response $respons
             throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         }
 
+    }catch(CookException $e){
+        throw $e;
     }catch(Exception $e){
         //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
         //나중에 로그로 남기며 정확한 exception은 client에 보내지 않기로 변경해야함.
@@ -598,7 +648,8 @@ $app->delete('/api/abouts/{num}' , function(Request $request , Response $respons
             ->withStatus(200)
             ->write(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
 
-
+    }catch(CookException $e){
+        throw $e;
     }catch(Exception $e){
         $db->rollBack();
         //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
