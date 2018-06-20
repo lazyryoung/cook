@@ -187,12 +187,13 @@ Class CookException extends Exception {
 //Exception ha
 class CookExceptionHandler {
     public function __invoke($request, $response, $exception) {
+
         $resultData = (!$exception instanceof CookException)
             ? array('result' => '500', 'message' => '', 'data' => '{"error" : {"text" : "오류가 발생했습니다."}}')
             : json_decode($exception->getMessage(), true);
         $statusCode = $resultData['result'];
         //var_dump((int)$statusCode);
-        echo $exception->getTraceAsString();
+        //echo $exception->getTraceAsString();
         return $response
             ->withStatus((int)$statusCode)
             ->write(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
