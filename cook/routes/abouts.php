@@ -3,6 +3,7 @@ use \Psr\Http\Message\ServerRequestInterface as Request;
 use \Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\UploadedFileInterface;
 use Slim\Http\UploadedFile;
+use \Firebase\JWT\JWT;
 
 //$app = new \Slim\App;
 
@@ -152,17 +153,20 @@ $app->post('/api/abouts[/{num}]' , function(Request $request , Response $respons
     $b_type = "about";
 
     //인증체크
-    $_SESSION['userid'] = "sedan";
-    if (!isset($_SESSION['userid'])) {
-        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증이 필요합니다."}}');
-        throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    }
+    //$_SESSION['userid'] = "sedan";
+    $token = $request->getAttribute('decoded_token_data');
+    $user = objectToArray($token['user']);
+//    if (!isset($user['id'])) {
+//        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증이 필요합니다."}}');
+//        throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+//    }
 
 
     //필수필드조사
     //업로드가 안되는 경우에는 폼데이타도 넘어오지 않아서 여기서부터 오류가 발생함.
     $data = $request->getParsedBody(); //application/x-www-form-urlencoded, multipart/form-data, post만 됨...
-    $key_arr = array('id', 'name', 'nick', 'content', 'subject');
+    //$key_arr = array('id', 'name', 'nick', 'content', 'subject');
+    $key_arr = array('content', 'subject');
     foreach ($key_arr as $key_name) {
         if (!array_key_exists($key_name, $data) || empty($data[$key_name])) {
             $resultData = array('result' => '400', 'message' => '', 'data' => '{"error" : {"text" : ' . $key_name . '"의 값이 없습니다."}}');
@@ -171,9 +175,10 @@ $app->post('/api/abouts[/{num}]' , function(Request $request , Response $respons
     }
 
     $abouts = [];
-    $abouts['id'] = filter_var($data['id'], FILTER_SANITIZE_STRING); //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
-    $abouts['name'] = filter_var($data['name'], FILTER_SANITIZE_STRING);
-    $abouts['nick'] = filter_var($data['nick'], FILTER_SANITIZE_STRING);
+//    $abouts['id'] = filter_var($data['id'], FILTER_SANITIZE_STRING); //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
+    $abouts['id'] = $user['id']; //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
+    $abouts['name'] = $user['name'];
+    $abouts['nick'] = $user['nick'];
     $abouts['is_html'] = filter_var($data['html_ok'], FILTER_SANITIZE_STRING);
     $abouts['subject'] = filter_var($data['subject'], FILTER_SANITIZE_FULL_SPECIAL_CHARS); //htmlspecialchars
     if ($abouts['is_html'] == "y") {
@@ -321,11 +326,12 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
     $data = $request->getParsedBody(); //application/x-www-form-urlencoded, multipart/form-data
 
     //인증검사
-    $_SESSION['userid'] = "sedan";
-    if (!isset($_SESSION['userid'])) {
-        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증이 필요합니다."}}');
-        throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-    }
+    $token = $request->getAttribute('decoded_token_data');
+    $user = objectToArray($token['user']);
+//    if (!isset($_SESSION['userid'])) {
+//        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증이 필요합니다."}}');
+//        throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+//    }
 
     //수정권한과 리소스 존재여부 검사, 역시 middleware로...
     $sql = "SELECT id FROM cook_about WHERE num=:num";
@@ -345,7 +351,7 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
             throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         }
         //배열처리없이 칼럼 하나만 가져오는 건 없낭?
-        if ($result['id'] != $_SESSION['userid']) {
+        if ($result['id'] != $user['id']) {
             $resultData = array('result' => '403', 'message' => '', 'data' => '{"error" : {"text" : "작성자만 수정할 수 있습니다."}}');
             throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         }
@@ -360,41 +366,44 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
     }
 
     //수정권한과 리소스 존재여부 검사, 역시 middleware로...
-    $sql = "SELECT id FROM cook_file WHERE b_num=:b_num AND b_type=:b_type AND num in (".implode(',', $data['file_num']). ")";
+    if (!empty($data['file_num'])) {
+        $sql = "SELECT id FROM cook_file WHERE b_num=:b_num AND b_type=:b_type AND num in (" . implode(',', $data['file_num']) . ")";
 
-    try{
-        $stmt = $db->prepare($sql);
-        $stmt->bindParam(':b_num',$num, PDO::PARAM_INT);
-        $stmt->bindValue(':b_type','about', PDO::PARAM_STR);
-        //$stmt->bindParam(':id',$_SESSION['userid'], PDO::PARAM_STR);
-        $stmt->execute();
+        try {
+            $stmt = $db->prepare($sql);
+            $stmt->bindParam(':b_num', $num, PDO::PARAM_INT);
+            $stmt->bindValue(':b_type', 'about', PDO::PARAM_STR);
+            //$stmt->bindParam(':id',$_SESSION['userid'], PDO::PARAM_STR);
+            $stmt->execute();
 
-        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        //echo "rowcount:".$stmt->rowCount();
-        //return $response;
+            //echo "rowcount:".$stmt->rowCount();
+            //return $response;
 
-        if ($stmt->rowCount() == 0) {
-            $resultData = array('result' => '404', 'message' => '', 'data' => '{"error" : {"text" : "존재하지 않는 파일입니다."}}');
+            if ($stmt->rowCount() == 0) {
+                $resultData = array('result' => '404', 'message' => '', 'data' => '{"error" : {"text" : "존재하지 않는 파일입니다."}}');
+                throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            }
+            //배열처리없이 칼럼 하나만 가져오는 건 없낭?
+            if ($result['id'] != $user['id']) {
+                $resultData = array('result' => '403', 'message' => '', 'data' => '{"error" : {"text" : "작성자만 수정할 수 있습니다."}}');
+                throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            }
+
+        } catch (CookException $e) {
+            throw $e;
+        } catch (Exception $e) {
+            //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
+            //나중에 로그로 남기며 정확한 exception은 client에 보내지 않기로 변경해야함.
+            $resultData = array('result' => '500', 'message' => '', 'data' => '{"error" : {"text" : ' . $e->getMessage() . '}}');
             throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         }
-        //배열처리없이 칼럼 하나만 가져오는 건 없낭?
-        if ($result['id'] != $_SESSION['userid']) {
-            $resultData = array('result' => '403', 'message' => '', 'data' => '{"error" : {"text" : "작성자만 수정할 수 있습니다."}}');
-            throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
-        }
-
-    }catch(CookException $e){
-        throw $e;
-    }catch(Exception $e){
-        //$data = array('result' => '500', 'message' => 'Exception!', 'data' => '');
-        //나중에 로그로 남기며 정확한 exception은 client에 보내지 않기로 변경해야함.
-        $resultData = array('result' => '500', 'message' => '', 'data' => '{"error" : {"text" : '.$e->getMessage().'}}');
-        throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
     }
     //필수필드조사
     //업로드가 안되는 경우에는 폼데이타도 넘어오지 않아서 여기서부터 오류가 발생함.
-    $key_arr = array('id', 'name', 'nick', 'content', 'subject');
+    //$key_arr = array('id', 'name', 'nick', 'content', 'subject');
+    $key_arr = array('content', 'subject');
     foreach ($key_arr as $key_name) {
         if (!array_key_exists($key_name, $data) || empty($data[$key_name])) {
             $resultData = array('result' => '400', 'message' => '', 'data' => '{"error" : {"text" : ' . $key_name . '"의 값이 없습니다."}}');
@@ -404,7 +413,7 @@ $app->put('/api/abouts/{num}' , function(Request $request , Response $response, 
 
 
     $abouts = [];
-    $abouts['id'] = filter_var($data['id'], FILTER_SANITIZE_STRING); //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
+    $abouts['id'] = $user['id']; //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
     $abouts['num'] = filter_var($num, FILTER_SANITIZE_NUMBER_INT); //빈 값이 db에 적용되기 시작해서 필드 유효성 검사 적용
     $abouts['is_html'] = filter_var($data['html_ok'], FILTER_SANITIZE_STRING);
     $abouts['subject'] = filter_var($data['subject'], FILTER_SANITIZE_FULL_SPECIAL_CHARS); //htmlspecialchars
@@ -570,11 +579,12 @@ $app->delete('/api/abouts/{num}' , function(Request $request , Response $respons
     $num = $args['num'];
 
     //인증검사
-    $_SESSION['userid'] = "sedan";
-    if (!isset($_SESSION['userid'])) {
-        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증이 필요합니다."}}');
-        throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-    }
+    $token = $request->getAttribute('decoded_token_data');
+    $user = objectToArray($token['user']);
+//    if (!isset($_SESSION['userid'])) {
+//        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증이 필요합니다."}}');
+//        throw new CookException(json_encode($resultData, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+//    }
 
     $data = $request->getParsedBody(); //application/x-www-form-urlencoded, multipart/form-data
 
@@ -596,8 +606,8 @@ $app->delete('/api/abouts/{num}' , function(Request $request , Response $respons
             throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         }
         //배열처리없이 칼럼 하나만 가져오는 건 없낭?
-        if ($result['id'] != $_SESSION['userid']) {
-            $resultData = array('result' => '403', 'message' => '', 'data' => '{"error" : {"text" : "작성자만 수정할 수 있습니다."}}');
+        if ($result['id'] != $user['id']) {
+            $resultData = array('result' => '403', 'message' => '', 'data' => '{"error" : {"text" : "작성자만 삭제할 수 있습니다."}}');
             throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
         }
 
@@ -620,7 +630,7 @@ $app->delete('/api/abouts/{num}' , function(Request $request , Response $respons
 
         $stmt = $db->prepare($sql);
         $stmt->bindParam(':num',$num, PDO::PARAM_INT);
-        $stmt->bindParam(':id',$_SESSION['userid'], PDO::PARAM_STR);
+        $stmt->bindParam(':id',$user['id'], PDO::PARAM_STR);
 
         $db->beginTransaction();
         $stmt->execute();
@@ -643,7 +653,7 @@ $app->delete('/api/abouts/{num}' , function(Request $request , Response $respons
 
 
         $db = null;
-        $resultData = array('result' => '200', 'message' => '', 'data' => '');
+        $resultData = array('result' => '204', 'message' => '', 'data' => '삭제했습니다.');
         return $response
             ->withStatus(200)
             ->write(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
