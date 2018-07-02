@@ -7,6 +7,9 @@ use \Psr\Http\Message\ServerRequestInterface as Request;
 use \Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\UploadedFileInterface;
 use Slim\Http\UploadedFile;
+use Monolog\Logger;
+use Monolog\Handler\StreamHandler;
+use \Firebase\JWT\JWT;
 
 /*
 $config['db']['host']   = 'localhost';
@@ -26,6 +29,10 @@ $container = new \Slim\Container(['settings' => $config]); //container : DI 추�
 //$container = new \Slim\Container();
 $container['temp_uploads'] = __DIR__ . '/temp_uploads';
 $container['uploads'] = __DIR__ . '/uploads';
+$container['jwt'] = ['secret' => 'supersecretkeyyoushouldnotcommittogithub'];
+$container['user'] = function ($container) {
+    return new StdClass;
+};
 $container['upload_errors'] = array(
     0 => '오류 없이 파일 업로드가 성공했습니다.',
     1 => '업로드한 파일이 php.ini upload_max_filesize 지시어보다 큽니다.',
@@ -38,10 +45,10 @@ $container['upload_errors'] = array(
 );  //https://secure.php.net/manual/kr/features.file-upload.errors.php
 
 $container['logger'] = function($container) {
-    //$logger = new \Monolog\Logger('my_logger');
-    //$file_handler = new \Monolog\Handler\StreamHandler('../../logs/app.log');
-    //$logger->pushHandler($file_handler);
-    //return $logger;
+    $logger = new \Monolog\Logger('my_logger');
+    $file_handler = new \Monolog\Handler\StreamHandler('../../logs/app.log');
+    $logger->pushHandler($file_handler);
+    return $logger;
 };
 
 $container['errorHandler'] = function ($container) {
@@ -99,10 +106,40 @@ $app = new \Slim\App($container);  //설정을 사용가능하도록 한다.
 $app->add(function ($req, $res, $next) {
     $response = $next($req, $res);
     return $response
-        ->withHeader('Access-Control-Allow-Origin', 'https://localhost')
+        ->withHeader('Access-Control-Allow-Origin', 'http://192.168.0.147')
+        ->withHeader('Access-Control-Allow-Credentials', 'true')
         ->withHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept, Origin, Authorization')
         ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
 });
+
+//인증 적용(token)
+$app->add(new Tuupola\Middleware\JwtAuthentication([
+    //"path" => "/api", /* or ["/api", "/admin"] */
+    //"ignore" => ["/api/signin"],
+    "secret" => "supersecretkeyyoushouldnotcommittogithub",
+    "attribute" => "decoded_token_data",
+    "logger" => $container['logger'],
+    "error" => function ($response, $exception) {
+        $resultData = array('result' => '401', 'message' => '', 'data' => '{"error" : {"text" : "인증되지 않았습니다."}}');
+        throw new CookException(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
+    },
+    "secure" => true,
+    "algorithm" => ["HS256", "HS384"],
+    "relaxed" => ["localhost", "192.168.0.147"], //https가 필수이나, 개발인 경우에는 아이피에도 적용하기 위해.
+    "rules" => [
+        new Tuupola\Middleware\JwtAuthentication\RequestPathRule([
+            "path" => "/api/abouts",
+            "ignore" => ["/api/signin"]
+        ]),
+        new Tuupola\Middleware\JwtAuthentication\RequestMethodRule([
+            "ignore" => ["OPTIONS", "GET"]
+        ])
+    ],
+    'callback' => function ($request, $response, $arguments) use ($container) {
+        $container['user'] = $arguments['decoded'];
+        //$container['user'] = $decode_data['user'];
+    },
+]));
 
 //임시며 middleware는 나중에 적용
 session_start();
@@ -149,6 +186,7 @@ $response = $this->view->render($response, 'tickets.phtml', ['tickets' => $ticke
 // abouts Routes
 require 'routes/abouts.php';
 require 'routes/memos.php';
+require 'routes/auths.php';
 
 /**
  * Moves the uploaded file to the upload directory and assigns it a unique name
@@ -193,10 +231,68 @@ class CookExceptionHandler {
             : json_decode($exception->getMessage(), true);
         $statusCode = $resultData['result'];
         //var_dump((int)$statusCode);
-        //echo $exception->getTraceAsString();
+        //echo $exception->getMessage();
         return $response
             ->withStatus((int)$statusCode)
             ->write(json_encode($resultData,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES));
     }
 }
+
+//$jwtAuth = (new JwtAuthentication(
+//    [
+//        "secret" => "secret",
+//        "secure" => "secure",
+//        "cookie" => "cookie",
+//        "error" => function ($request, $response, $arguments) use ($container) {
+//            return $response->withRedirect( $container->get("router")->pathFor("index"),301 );
+//        },
+//    ]
+//))->withRules([
+//    new RequestPathRule([
+//        "path" => "/lookbooks",
+//        "ignore" => ["/backend/login"],
+//    ]),
+//    new RequestMethodRule([
+//        "ignore" => ["OPTIONS"],
+//    ])
+//]);
+
+function objectToArray($d) {
+    if (is_object($d)) {
+        // Gets the properties of the given object
+        // with get_object_vars function
+        $d = get_object_vars($d);
+    }
+
+    if (is_array($d)) {
+        /*
+        * Return array converted to object
+        * Using __FUNCTION__ (Magic constant)
+        * for recursive call
+        */
+        return array_map(__FUNCTION__, $d);
+    }
+    else {
+        // Return array
+        return $d;
+    }
+}
+//Array -> stdClass
+function arrayToObject($d) {
+    if (is_array($d)) {
+        /*
+        * Return array converted to object
+        * Using __FUNCTION__ (Magic constant)
+        * for recursive call
+        */
+        return (object) array_map(__FUNCTION__, $d);
+    }
+    else {
+        // Return object
+        return $d;
+    }
+}
+
+
+//$app->add($jwtAuth);
 $app->run();
